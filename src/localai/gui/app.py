@@ -42,6 +42,11 @@ class LocalAiApp:
         self.busy = False
         self.running = False
         self.close_requested = False
+        self.destroyed = False
+        self._event_after_id: str | None = None
+        self._elapsed_after_id: str | None = None
+        self._startup_after_id: str | None = None
+        self._log_handler: QueueLogHandler | None = None
         self.started_monotonic: float | None = None
 
         self.status_var = tk.StringVar(value="准备启动")
@@ -59,9 +64,9 @@ class LocalAiApp:
         self._build_ui()
         self._install_log_handler()
         self.root.protocol("WM_DELETE_WINDOW", self._request_close)
-        self.root.after(100, self._drain_events)
-        self.root.after(1000, self._update_elapsed)
-        self.root.after(250, self.start_model)
+        self._event_after_id = self.root.after(100, self._drain_events)
+        self._elapsed_after_id = self.root.after(1000, self._update_elapsed)
+        self._startup_after_id = self.root.after(250, self.start_model)
 
     def _configure_window(self) -> None:
         self.root.title("LocalAiBridge - Qwen3.8 本地 AI 服务")
@@ -172,8 +177,10 @@ class LocalAiApp:
         handler.setLevel(logging.INFO)
         handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
         logging.getLogger().addHandler(handler)
+        self._log_handler = handler
 
     def start_model(self) -> None:
+        self._startup_after_id = None
         if self.busy:
             return
         self.busy = True
@@ -242,16 +249,24 @@ class LocalAiApp:
             self.events.put(("health_error", str(exc)))
 
     def _drain_events(self) -> None:
+        self._event_after_id = None
+        if self.destroyed:
+            return
         try:
-            while True:
+            while not self.destroyed:
                 event, payload = self.events.get_nowait()
                 self._handle_event(event, payload)
         except queue.Empty:
             pass
-        if self.root.winfo_exists():
-            self.root.after(100, self._drain_events)
+        if not self.destroyed:
+            try:
+                self._event_after_id = self.root.after(100, self._drain_events)
+            except tk.TclError:
+                self.destroyed = True
 
     def _handle_event(self, event: str, payload: Any) -> None:
+        if self.destroyed:
+            return
         if event == "log":
             level, message = payload
             self._append_log(level, message)
@@ -292,7 +307,7 @@ class LocalAiApp:
             self.health_button.configure(state="disabled")
             self._append_log("SUCCESS", "本地 AI 服务已停止，模型资源已释放")
             if self.close_requested:
-                self.root.destroy()
+                self._destroy_window()
         elif event == "health":
             self.health_button.configure(state="normal")
             self.detail_var.set("健康检查通过，配置模型可用")
@@ -313,7 +328,7 @@ class LocalAiApp:
             self.health_button.configure(state="disabled")
             self._append_log("ERROR", str(payload))
             if self.close_requested:
-                self.root.destroy()
+                self._destroy_window()
             else:
                 messagebox.showerror("本地 AI 服务错误", str(payload))
 
@@ -332,14 +347,20 @@ class LocalAiApp:
         self.log_text.configure(state="disabled")
 
     def _update_elapsed(self) -> None:
+        self._elapsed_after_id = None
+        if self.destroyed:
+            return
         if self.started_monotonic is not None and (self.busy or self.running):
             elapsed = int(time.monotonic() - self.started_monotonic)
             self.elapsed_var.set(str(timedelta(seconds=elapsed)))
-        if self.root.winfo_exists():
-            self.root.after(1000, self._update_elapsed)
+        if not self.destroyed:
+            try:
+                self._elapsed_after_id = self.root.after(1000, self._update_elapsed)
+            except tk.TclError:
+                self.destroyed = True
 
     def _request_close(self) -> None:
-        if self.close_requested:
+        if self.close_requested or self.destroyed:
             return
         self.close_requested = True
         self.status_var.set("正在关闭")
@@ -350,7 +371,29 @@ class LocalAiApp:
             self.busy = True
             threading.Thread(target=self._stop_worker, daemon=True).start()
         else:
+            self._destroy_window()
+
+    def _destroy_window(self) -> None:
+        """取消 Tk 定时回调并且只销毁窗口一次。"""
+        if self.destroyed:
+            return
+        self.destroyed = True
+        for attribute in ("_event_after_id", "_elapsed_after_id", "_startup_after_id"):
+            after_id = getattr(self, attribute)
+            if after_id is not None:
+                try:
+                    self.root.after_cancel(after_id)
+                except tk.TclError:
+                    pass
+                setattr(self, attribute, None)
+        if self._log_handler is not None:
+            logging.getLogger().removeHandler(self._log_handler)
+            self._log_handler.close()
+            self._log_handler = None
+        try:
             self.root.destroy()
+        except tk.TclError:
+            pass
 
     def _close_after_start(self) -> None:
         if self.client:
