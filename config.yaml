@@ -1,0 +1,20 @@
+app:
+  log_level: ${LOG_LEVEL:-INFO}
+
+llamacpp:
+  base_url: ${LLAMACPP_BASE_URL:-http://127.0.0.1:8080/v1}
+  host: ${LLAMACPP_HOST:-127.0.0.1}
+  port: ${LLAMACPP_PORT:-8080}
+  model: ${LLAMACPP_MODEL:-local-model}
+  api_key: ${LLAMACPP_API_KEY:-}
+  autostart: ${LLAMACPP_AUTOSTART:-true}
+  server_path: '${LLAMACPP_SERVER_PATH:-}'
+  model_path: '${LLAMACPP_MODEL_PATH:-}'
+  mmproj_path: '${LLAMACPP_MMPROJ_PATH:-}'
+  # Shared CUDA runtime directory beside the project directory.
+  extra_dll_dirs: '${LLAMACPP_EXTRA_DLL_DIRS:-../vendor/cuda12}'
+  n_gpu_layers: ${LLAMACPP_N_GPU_LAYERS:-999}
+  ctx_size: ${LLAMACPP_CTX_SIZE:-8192}
+  reasoning: '${LLAMACPP_REASONING:-off}'
+  reasoning_budget: ${LLAMACPP_REASONING_BUDGET:-0}
+  startup_timeout: ${LLAMACPP_STARTUP_TIMEOUT:-600}
