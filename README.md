@@ -32,6 +32,32 @@ CUDA 12 运行库统一放在项目上级的共享目录 `../vendor/cuda12`，�
 .\.venv\Scripts\python.exe main.py
 ```
 
+图形界面在 Windows 运行时使用 `icons/windows/LocalAIBridge.ico` 作为窗口和任务栏图标。
+`icons/macos/LocalAIBridge.icns` 用作 macOS `.app` 应用包的图标；打包时应将该文件传给所用
+打包工具的应用图标选项。两个平台图标均由带真实 Alpha 透明通道的
+`icons/LocalAIBridge.png` 生成，不要使用带棋盘格背景的预览图替换源文件。
+
+### 构建无控制台 Windows EXE
+
+首次构建先安装构建依赖，然后执行构建脚本：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.\build_windows_exe.ps1
+```
+
+生成的单文件程序位于 `dist/LocalAiBridge.exe`，双击运行不会显示 CMD 窗口。程序优先读取 EXE
+同目录的 `common.env` 和 `config.yaml`；从本项目的 `dist` 目录直接运行时，也会自动读取项目根目录
+中的配置。默认 `config.yaml` 和窗口图标同时内置在 EXE 中，但模型、llama.cpp 和本机密钥仍使用
+`common.env` 指向的外部资源。
+
+该程序使用 Windows GUI 子系统构建；它启动的 `llama-server` 以及停止服务时调用的 `taskkill`
+也使用无窗口进程标志，因此正常运行和退出均不会弹出黑色控制台。`start_LocalAiBridge.cmd` 仅作为
+源码启动兼容入口，Windows 执行批处理文件时仍可能短暂闪现控制台，日常使用应直接运行 EXE。
+
+`build/`、`dist/`、PyInstaller 自动生成的 `*.spec`、`.tmp*/` 和 `.pytest_tmp*/` 都是可重新生成的
+本地产物，已在 `.gitignore` 中排除，不会提交到 Git。
+
 窗口启动后会自动在后台加载模型，显眼的进度条显示当前阶段；“服务运行信息”区域显示模型、局域网
 IP、端口、Mac 访问地址和 PID。点击“健康检查”可重新检查 `/health` 与模型列表；点击“停止模型”
 或关闭窗口会停止 `llama-server` 并释放内存/显存。窗口日志使用线程安全队列更新，模型加载期间界面

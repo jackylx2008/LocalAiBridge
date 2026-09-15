@@ -15,6 +15,16 @@ from urllib.request import Request, urlopen
 CUDA_RUNTIME_DLLS = ("cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll")
 
 
+def subprocess_creation_flags(persistent: bool = False) -> int:
+    """返回不会为控制台程序创建可见窗口的 Windows 进程标志。"""
+    if os.name != "nt":
+        return 0
+    flags = subprocess.CREATE_NO_WINDOW
+    if persistent:
+        flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    return flags
+
+
 @dataclass(frozen=True)
 class LlamaCppConfig:
     base_url: str
@@ -161,9 +171,7 @@ class LlamaCppClient:
         logs_dir.mkdir(parents=True, exist_ok=True)
         out_handle = (logs_dir / "llama_server.out.log").open("ab")
         err_handle = (logs_dir / "llama_server.err.log").open("ab")
-        creationflags = 0
-        if persistent and os.name == "nt":
-            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        creationflags = subprocess_creation_flags(persistent)
         try:
             self.process = subprocess.Popen(
                 self.config.command(), cwd=self.project_root, env=env,

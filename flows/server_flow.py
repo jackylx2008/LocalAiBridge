@@ -140,7 +140,11 @@ def stop(context: AppContext) -> dict[str, Any]:
         import subprocess
 
         completed = subprocess.run(
-            ["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, check=False,
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         if completed.returncode not in {0, 128}:
             raise RuntimeError(completed.stderr.strip() or completed.stdout.strip())

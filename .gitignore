@@ -2,6 +2,7 @@
 __pycache__/
 .pytest_cache/
 .pytest_tmp*/
+.tmp*/
 *.py[cod]
 common.env
 *.env
@@ -9,6 +10,9 @@ logs/
 run/
 vendor/cuda12/
 output/
+build/
+dist/
+*.spec
 data/
 raw_data/
 .coverage

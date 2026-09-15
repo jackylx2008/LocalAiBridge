@@ -31,7 +31,11 @@ from logging_config import configure_utf8_stdio, setup_logger
 def main() -> int:
     configure_utf8_stdio()
     context = bootstrap_context(__file__)
-    setup_logger(context.config["app"]["log_level"])
+    log_name = "LocalAiBridge.log" if getattr(sys, "frozen", False) else "main.log"
+    setup_logger(
+        context.config["app"]["log_level"],
+        context.project_root / "logs" / log_name,
+    )
     run_gui(context)
     return 0
 

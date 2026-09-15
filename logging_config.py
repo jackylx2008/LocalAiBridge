@@ -29,10 +29,11 @@ def setup_logger(
     root_logger.handlers.clear()
 
     formatter = logging.Formatter(LOG_FORMAT)
-    # 使用 stdout，避免 PowerShell 将正常 INFO 日志按 stderr 错误信息标红。
-    console = logging.StreamHandler(sys.stdout)
-    console.setFormatter(formatter)
-    root_logger.addHandler(console)
+    # Windows 无控制台 EXE 的 stdout 为 None，此时只写入磁盘日志。
+    if sys.stdout is not None:
+        console = logging.StreamHandler(sys.stdout)
+        console.setFormatter(formatter)
+        root_logger.addHandler(console)
 
     file_handler = RotatingFileHandler(
         target,

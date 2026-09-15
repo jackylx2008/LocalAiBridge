@@ -9,6 +9,7 @@ import threading
 import time
 import tkinter as tk
 from datetime import timedelta
+from pathlib import Path
 from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 from typing import Any
@@ -72,6 +73,7 @@ class LocalAiApp:
         self.root.title("LocalAiBridge - Qwen3.8 本地 AI 服务")
         self.root.geometry("920x720")
         self.root.minsize(760, 600)
+        configure_window_icon(self.root, self.context.project_root)
         style = ttk.Style(self.root)
         style.configure("Hero.Horizontal.TProgressbar", thickness=26)
         style.configure("Status.TLabel", font=("Microsoft YaHei UI", 17, "bold"))
@@ -401,7 +403,44 @@ class LocalAiApp:
         self.events.put(("stopped", None))
 
 
+def configure_window_icon(root: tk.Tk, project_root: Path) -> bool:
+    """在支持的桌面平台设置窗口图标，失败时不影响应用启动。"""
+    if sys.platform != "win32":
+        return False
+
+    relative_path = Path("icons") / "windows" / "LocalAIBridge.ico"
+    icon_path = project_root / relative_path
+    if not icon_path.is_file() and getattr(sys, "frozen", False):
+        icon_path = Path(getattr(sys, "_MEIPASS", project_root)) / relative_path
+    if not icon_path.is_file():
+        logging.getLogger(__name__).warning("窗口图标不存在：%s", icon_path)
+        return False
+
+    try:
+        root.iconbitmap(default=str(icon_path))
+    except tk.TclError:
+        logging.getLogger(__name__).warning("Tk 无法加载窗口图标：%s", icon_path, exc_info=True)
+        return False
+    return True
+
+
+def configure_process_identity() -> bool:
+    """为 Windows 任务栏设置稳定的应用标识。"""
+    if sys.platform != "win32":
+        return False
+
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("LocalAiBridge.Desktop")
+    except (AttributeError, OSError):
+        logging.getLogger(__name__).warning("无法设置 Windows 应用标识", exc_info=True)
+        return False
+    return True
+
+
 def run_gui(context: AppContext) -> None:
+    configure_process_identity()
     root = tk.Tk()
     LocalAiApp(root, context)
     root.mainloop()
