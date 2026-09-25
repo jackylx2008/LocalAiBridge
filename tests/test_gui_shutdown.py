@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import queue
 from pathlib import Path
 from typing import Any
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 import tkinter as tk
 
-from localai.gui.app import LocalAiApp, configure_process_identity, configure_window_icon
+from localai.gui.app import LocalAiApp, QueueLogHandler, configure_process_identity, configure_window_icon
 
 
 class FakeRoot:
@@ -77,3 +78,23 @@ def test_configure_process_identity_is_skipped_outside_windows() -> None:
         configured = configure_process_identity()
 
     assert configured is False
+
+
+def test_queue_log_handler_omits_traceback_from_gui() -> None:
+    events: queue.Queue[tuple[str, Any]] = queue.Queue()
+    handler = QueueLogHandler(events)
+    handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
+
+    try:
+        raise RuntimeError("concise cause")
+    except RuntimeError:
+        record = logging.getLogger("test").makeRecord(
+            "test", logging.ERROR, __file__, 1, "startup failed: %s", ("concise cause",),
+            exc_info=True,
+        )
+    handler.emit(record)
+
+    event, payload = events.get_nowait()
+    assert event == "log"
+    assert "startup failed: concise cause" in payload[1]
+    assert "Traceback" not in payload[1]

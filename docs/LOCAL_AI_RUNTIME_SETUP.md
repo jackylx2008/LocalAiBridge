@@ -312,12 +312,24 @@ logs/llama_server.err.log
 
 - `nvidia-smi` 不可用：先检查 NVIDIA 驱动是否正常安装
 - `/health` 不可用：检查端口是否被占用，或 `LLAMACPP_SERVER_PATH` 是否正确
+- `couldn't bind HTTP server socket`：配置端口已被其他进程监听，常见原因是另一个项目已经拉起了本地 AI 服务；关闭已有服务或为其中一个项目改用其他端口
 - 模型不存在：检查 `LLAMACPP_MODEL_PATH`，并确认 `.gguf` 文件存在
 - 请求模型名不匹配：访问 `/v1/models`，将 `LLAMACPP_MODEL` 改为返回的模型 id，或使用 `--alias` 保持稳定名称
 - 只返回 reasoning、不返回 content：确认 `LLAMACPP_REASONING=off` 和 `LLAMACPP_REASONING_BUDGET=0`，然后重启 `llama-server`
 - 中文输出乱码：使用项目入口脚本输出；脚本已将 stdout 设置为 UTF-8
 - `llama-server.exe` 进程内存高但显存低：先用 `--list-devices` 确认 CUDA backend 是否加载；若未加载，检查共享目录 `../vendor/cuda12` 和 `LLAMACPP_EXTRA_DLL_DIRS`
 - 任务结束后显存未释放：检查是否仍有 `llama-server.exe` 残留进程
+
+定位 8080 端口占用进程：
+
+```powershell
+$listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
+$listener | Select-Object LocalAddress, LocalPort, OwningProcess
+$listener | ForEach-Object { Get-Process -Id $_.OwningProcess }
+```
+
+确认进程属于其他项目后，应优先通过该项目自己的停止功能正常关闭。只有明确知道目标进程可以终止时，
+才使用 `Stop-Process`，避免误停不属于本项目的服务。
 
 停止本地服务：
 

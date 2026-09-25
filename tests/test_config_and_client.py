@@ -5,7 +5,11 @@ import subprocess
 
 from localai.config_loader import load_config
 from localai.context import resolve_runtime_paths
-from localai.modules.llamacpp_client import LlamaCppConfig, subprocess_creation_flags
+from localai.modules.llamacpp_client import (
+    LlamaCppConfig,
+    subprocess_creation_flags,
+    summarize_server_exit,
+)
 
 
 def test_example_config_loads(monkeypatch, tmp_path: Path) -> None:
@@ -67,3 +71,26 @@ def test_windows_subprocesses_are_started_without_a_console(monkeypatch) -> None
     assert session_flags & subprocess.CREATE_NO_WINDOW
     assert persistent_flags & subprocess.CREATE_NO_WINDOW
     assert persistent_flags & subprocess.CREATE_NEW_PROCESS_GROUP
+
+
+def test_server_exit_summary_explains_port_conflict() -> None:
+    message = summarize_server_exit(
+        "E srv start: couldn't bind HTTP server socket, hostname: 0.0.0.0, port: 8080",
+        port=8080,
+        returncode=1,
+    )
+
+    assert "问题本质" in message
+    assert "端口 8080 已被其他程序占用" in message
+    assert "退出码 1" in message
+
+
+def test_server_exit_summary_preserves_unknown_root_error() -> None:
+    message = summarize_server_exit(
+        "setup started\nFATAL: unsupported model architecture",
+        port=8080,
+        returncode=2,
+    )
+
+    assert "unsupported model architecture" in message
+    assert "llama_server.err.log" in message

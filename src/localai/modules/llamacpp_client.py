@@ -111,12 +111,46 @@ def _as_bool(value: object) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def summarize_server_exit(stderr_text: str, port: int, returncode: int | None) -> str:
+    """Turn llama-server stderr into a short, actionable user-facing message."""
+    prefix = f"llama-server 启动失败（退出码 {returncode}）。问题本质："
+    lowered = stderr_text.lower()
+
+    if "couldn't bind http server socket" in lowered or "address already in use" in lowered:
+        return (
+            prefix
+            + f"端口 {port} 已被其他程序占用，无法启动第二个本地 AI 服务。"
+            + "请关闭占用该端口的服务，或为其中一个服务改用其他端口。"
+        )
+    if any(marker in lowered for marker in ("out of memory", "cuda error: out of memory", "failed to allocate")):
+        return (
+            prefix
+            + "内存或显存不足，模型无法完成加载。"
+            + "请关闭其他占用内存/显存的程序，或降低模型大小、上下文长度及 GPU Offload。"
+        )
+    if any(marker in lowered for marker in ("failed to load model", "error loading model", "invalid model")):
+        return prefix + "模型文件无法加载。请检查 GGUF 文件是否完整、路径是否正确，并确认其与当前 llama.cpp 版本兼容。"
+
+    detail = next(
+        (
+            line.strip()
+            for line in reversed(stderr_text.splitlines())
+            if any(marker in line.lower() for marker in ("error", "failed", "fatal", "couldn't"))
+        ),
+        "底层服务在完成启动前退出，错误日志中没有可识别的原因。",
+    )
+    if len(detail) > 240:
+        detail = detail[:237] + "..."
+    return prefix + detail + " 请查看 logs/llama_server.err.log 获取完整信息。"
+
+
 class LlamaCppClient:
     def __init__(self, config: LlamaCppConfig, project_root: Path) -> None:
         self.config = config
         self.project_root = project_root
         self.process: subprocess.Popen[bytes] | None = None
         self.pid_file = project_root / "run" / "llama-server.pid"
+        self._stderr_start_offset = 0
 
     @property
     def headers(self) -> dict[str, str]:
@@ -169,8 +203,11 @@ class LlamaCppClient:
         env["PATH"] = os.pathsep.join(path_parts + [env.get("PATH", "")])
         logs_dir = self.project_root / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
-        out_handle = (logs_dir / "llama_server.out.log").open("ab")
-        err_handle = (logs_dir / "llama_server.err.log").open("ab")
+        out_path = logs_dir / "llama_server.out.log"
+        err_path = logs_dir / "llama_server.err.log"
+        self._stderr_start_offset = err_path.stat().st_size if err_path.exists() else 0
+        out_handle = out_path.open("ab")
+        err_handle = err_path.open("ab")
         creationflags = subprocess_creation_flags(persistent)
         try:
             self.process = subprocess.Popen(
@@ -184,6 +221,22 @@ class LlamaCppClient:
         self.pid_file.write_text(str(self.process.pid), encoding="ascii")
         return self.process
 
+    def _server_exit_message(self) -> str:
+        """Summarize only stderr written by the current llama-server process."""
+        err_path = self.project_root / "logs" / "llama_server.err.log"
+        stderr_text = ""
+        try:
+            with err_path.open("rb") as handle:
+                handle.seek(self._stderr_start_offset)
+                stderr_text = handle.read().decode("utf-8", errors="replace")
+        except OSError:
+            pass
+        return summarize_server_exit(
+            stderr_text,
+            port=self.config.port,
+            returncode=self.process.returncode if self.process else None,
+        )
+
     def wait_until_ready(
         self,
         wait_callback: Callable[[float], None] | None = None,
@@ -192,7 +245,7 @@ class LlamaCppClient:
         deadline = time.monotonic() + self.config.startup_timeout
         while time.monotonic() < deadline:
             if self.process and self.process.poll() is not None:
-                raise RuntimeError(f"llama-server 已异常退出，退出码 {self.process.returncode}")
+                raise RuntimeError(self._server_exit_message())
             try:
                 health = self.health()
                 models = self.models()

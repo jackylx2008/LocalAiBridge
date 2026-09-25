@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import queue
 import sys
@@ -28,7 +29,12 @@ class QueueLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            self.events.put(("log", (record.levelname, self.format(record))))
+            # Keep tracebacks in the disk log while the GUI shows only the
+            # concise exception summary intended for the user.
+            ui_record = copy.copy(record)
+            ui_record.exc_info = None
+            ui_record.exc_text = None
+            self.events.put(("log", (record.levelname, self.format(ui_record))))
         except Exception:
             self.handleError(record)
 

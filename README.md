@@ -36,6 +36,8 @@ CUDA 12 运行库统一放在项目上级的共享目录 `../vendor/cuda12`，�
 `icons/macos/LocalAIBridge.icns` 用作 macOS `.app` 应用包的图标；打包时应将该文件传给所用
 打包工具的应用图标选项。两个平台图标均由带真实 Alpha 透明通道的
 `icons/LocalAIBridge.png` 生成，不要使用带棋盘格背景的预览图替换源文件。
+修改图标后可运行 `python icons/generate_local_ai_bridge_icon.py`，同步生成高分辨率 PNG
+和包含 16–256 像素帧的 Windows ICO。
 
 ### 构建无控制台 Windows EXE
 
@@ -62,6 +64,19 @@ CUDA 12 运行库统一放在项目上级的共享目录 `../vendor/cuda12`，�
 IP、端口、Mac 访问地址和 PID。点击“健康检查”可重新检查 `/health` 与模型列表；点击“停止模型”
 或关闭窗口会停止 `llama-server` 并释放内存/显存。窗口日志使用线程安全队列更新，模型加载期间界面
 仍可正常移动、缩放和切换选项卡。
+
+`llama-server` 意外退出时，窗口会从本次启动产生的底层日志中提炼问题本质，不再只显示退出码和
+大段 Python traceback。目前可直接识别端口占用、内存或显存不足、模型加载失败；其他错误会显示
+最后一条关键底层信息，并提示查看 `logs/llama_server.err.log`。
+
+如果提示“端口 8080 已被其他程序占用”，通常表示其他项目已经启动了本地 AI 服务。先关闭已有服务，
+或让两个项目使用不同端口，再点击“重新加载模型”。可用以下命令查看占用进程：
+
+```powershell
+Get-NetTCPConnection -LocalPort 8080 -State Listen |
+  Select-Object LocalAddress, LocalPort, OwningProcess
+Get-Process -Id <OwningProcess>
+```
 
 主窗口关闭时会自动停止服务并卸载模型。应用日志写入 `logs/main.log`，底层服务日志写入
 `logs/llama_server.out.log` 和 `logs/llama_server.err.log`。
@@ -152,3 +167,4 @@ $env:PYTHONPATH="src"
 ```
 
 详细运行环境和故障排查见 [本地 AI 运行文档](docs/LOCAL_AI_RUNTIME_SETUP.md)。
+本次图标与错误提示改进见 [2026-09-25 更新说明](docs/UPDATE_2026-09-25.md)。
