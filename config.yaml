@@ -14,7 +14,7 @@ llamacpp:
   # Shared CUDA runtime directory beside the project directory.
   extra_dll_dirs: '${LLAMACPP_EXTRA_DLL_DIRS:-../vendor/cuda12}'
   n_gpu_layers: ${LLAMACPP_N_GPU_LAYERS:-999}
-  ctx_size: ${LLAMACPP_CTX_SIZE:-8192}
+  ctx_size: ${LLAMACPP_CTX_SIZE:-32768}
   reasoning: '${LLAMACPP_REASONING:-off}'
   reasoning_budget: ${LLAMACPP_REASONING_BUDGET:-0}
   startup_timeout: ${LLAMACPP_STARTUP_TIMEOUT:-600}

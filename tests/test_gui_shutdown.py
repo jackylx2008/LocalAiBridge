@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import tkinter as tk
 
-from localai.gui.app import LocalAiApp, QueueLogHandler, configure_process_identity, configure_window_icon
+from localai.gui.app import LocalAiApp, QueueLogHandler, configure_process_identity, configure_window_icon, parse_context_tokens
 
 
 class FakeRoot:
@@ -36,6 +36,30 @@ def test_event_drain_does_not_reschedule_after_destroy() -> None:
 
     assert app.root.after_calls == []
     assert app._event_after_id is None
+
+
+def test_context_token_input_requires_positive_integer() -> None:
+    assert parse_context_tokens(" 16384 ") == 16384
+    for value in ("", "0", "-1", "16K", "3.5"):
+        try:
+            parse_context_tokens(value)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"无效 token 数未被拒绝: {value!r}")
+
+
+def test_16k_shortcut_sets_value_and_reloads() -> None:
+    app = LocalAiApp.__new__(LocalAiApp)
+    app.busy = False
+    values: list[str] = []
+    app.ctx_size_var = tk.StringVar(master=tk.Tcl(), value="32768")
+    app.start_model = lambda: values.append(app.ctx_size_var.get())
+
+    app.set_context_size(16384)
+
+    assert app.ctx_size_var.get() == "16384"
+    assert values == ["16384"]
 
 
 class FakeIconRoot:

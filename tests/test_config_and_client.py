@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 
-from localai.config_loader import load_config
+from localai.config_loader import load_config, save_ctx_size
 from localai.context import resolve_runtime_paths
 from localai.modules.llamacpp_client import (
     LlamaCppConfig,
@@ -16,12 +16,24 @@ def test_example_config_loads(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("LLAMACPP_API_KEY", "test-secret")
     monkeypatch.setenv("LLAMACPP_SERVER_PATH", str(tmp_path / "server.exe"))
     monkeypatch.setenv("LLAMACPP_MODEL_PATH", str(tmp_path / "model.gguf"))
+    monkeypatch.setenv("LLAMACPP_CTX_SIZE", "32768")
     config = load_config(Path(__file__).parents[1])
     llama = LlamaCppConfig.from_config(config["llamacpp"], Path(__file__).parents[1])
     assert llama.model == "Qwen3.8-27B-Q4_K_M"
     assert "--api-key" in llama.command()
     assert llama.host == "0.0.0.0"
     assert llama.extra_dll_dirs == (Path(__file__).parents[2] / "vendor" / "cuda12",)
+    assert llama.command()[llama.command().index("-c") + 1] == "32768"
+
+
+def test_save_ctx_size_preserves_other_local_settings(tmp_path: Path) -> None:
+    env_path = tmp_path / "common.env"
+    env_path.write_bytes(b"LLAMACPP_API_KEY=keep-secret\r\nLLAMACPP_CTX_SIZE=8192\r\n")
+
+    save_ctx_size(tmp_path, 32768)
+
+    assert env_path.read_bytes() == b"LLAMACPP_API_KEY=keep-secret\r\nLLAMACPP_CTX_SIZE=32768\r\n"
+    assert not list(tmp_path.glob(".common.env.*"))
 
 
 def test_resolve_runtime_paths_uses_project_root_for_source(monkeypatch, tmp_path: Path) -> None:

@@ -63,13 +63,15 @@ class LlamaCppConfig:
             mmproj_path=as_path(mmproj_value) if mmproj_value else None,
             extra_dll_dirs=tuple(as_path(value) for value in dll_values if value),
             n_gpu_layers=int(data.get("n_gpu_layers", 999)),
-            ctx_size=int(data.get("ctx_size", 8192)),
+            ctx_size=int(data.get("ctx_size", 32768)),
             reasoning=str(data.get("reasoning", "off")),
             reasoning_budget=int(data.get("reasoning_budget", 0)),
             startup_timeout=float(data.get("startup_timeout", 600)),
         )
 
     def validate(self) -> None:
+        if self.ctx_size <= 0:
+            raise ValueError("上下文 token 数必须是正整数")
         missing = [path for path in (self.server_path, self.model_path) if not path.is_file()]
         if self.mmproj_path and not self.mmproj_path.is_file():
             missing.append(self.mmproj_path)

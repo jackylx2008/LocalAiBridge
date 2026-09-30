@@ -15,6 +15,7 @@ from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 from typing import Any
 
+from localai.config_loader import save_ctx_size
 from localai.context import AppContext
 from flows.server_flow import build_client, start_owned
 from localai.modules.llamacpp_client import LlamaCppClient
@@ -37,6 +38,14 @@ class QueueLogHandler(logging.Handler):
             self.events.put(("log", (record.levelname, self.format(ui_record))))
         except Exception:
             self.handleError(record)
+
+
+def parse_context_tokens(value: str) -> int:
+    """校验 GUI 输入的 llama.cpp 上下文 token 数。"""
+    value = value.strip()
+    if not value.isascii() or not value.isdecimal() or int(value) <= 0:
+        raise ValueError("上下文 token 数必须是正整数，例如 32768")
+    return int(value)
 
 
 class LocalAiApp:
@@ -62,6 +71,7 @@ class LocalAiApp:
         self.model_var = tk.StringVar(value="尚未加载")
         self.ip_var = tk.StringVar(value="检测中")
         self.port_var = tk.StringVar(value=str(context.config["llamacpp"].get("port", 8080)))
+        self.ctx_size_var = tk.StringVar(value=str(context.config["llamacpp"].get("ctx_size", 32768)))
         self.url_var = tk.StringVar(value="等待模型启动")
         self.pid_var = tk.StringVar(value="—")
         self.elapsed_var = tk.StringVar(value="00:00:00")
@@ -171,14 +181,30 @@ class LocalAiApp:
             ("模型别名", config.get("model")),
             ("监听地址", f"{config.get('host')}:{config.get('port')}"),
             ("本机 API", config.get("base_url")),
-            ("上下文长度", config.get("ctx_size")),
+            ("上下文长度（token）", None),
             ("GPU Offload 层", config.get("n_gpu_layers")),
             ("API 鉴权", "已启用 Bearer Key" if config.get("api_key") else "未启用"),
             ("模型文件", config.get("model_path")),
         ]
         for row, (label, value) in enumerate(items):
             ttk.Label(parent, text=f"{label}：").grid(row=row, column=0, sticky="nw", padx=(0, 12), pady=6)
+            if value is None:
+                editor = ttk.Frame(parent)
+                editor.grid(row=row, column=1, sticky="w", pady=3)
+                ttk.Entry(editor, textvariable=self.ctx_size_var, width=14).pack(side="left")
+                self.apply_ctx_button = ttk.Button(editor, text="保存并重新加载", command=self.start_model)
+                self.apply_ctx_button.pack(side="left", padx=(10, 0))
+                self.use_16k_button = ttk.Button(
+                    editor, text="一键设为 16K", command=lambda: self.set_context_size(16384)
+                )
+                self.use_16k_button.pack(side="left", padx=(10, 0))
+                continue
             ttk.Label(parent, text=str(value), wraplength=650).grid(row=row, column=1, sticky="nw", pady=6)
+        ttk.Label(
+            parent,
+            text="默认 32768 token（32K）；16K 快捷按钮会保存设置并重新加载。32K 需以实际显存测试结果为准。",
+            wraplength=650,
+        ).grid(row=len(items), column=1, sticky="w", pady=(4, 0))
 
     def _install_log_handler(self) -> None:
         handler = QueueLogHandler(self.events)
@@ -187,9 +213,25 @@ class LocalAiApp:
         logging.getLogger().addHandler(handler)
         self._log_handler = handler
 
+    def set_context_size(self, ctx_size: int) -> None:
+        """快捷选择上下文长度并立即应用。"""
+        if self.busy:
+            return
+        self.ctx_size_var.set(str(ctx_size))
+        self.start_model()
+
     def start_model(self) -> None:
         self._startup_after_id = None
         if self.busy:
+            return
+        try:
+            ctx_size = parse_context_tokens(self.ctx_size_var.get())
+            if ctx_size != int(self.context.config["llamacpp"]["ctx_size"]):
+                save_ctx_size(self.context.project_root, ctx_size)
+                self.context.config["llamacpp"]["ctx_size"] = ctx_size
+                self._append_log("INFO", f"上下文长度已保存为 {ctx_size} token；本次加载将使用 -c {ctx_size}")
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("上下文长度设置失败", str(exc))
             return
         self.busy = True
         self.running = False
@@ -198,6 +240,8 @@ class LocalAiApp:
         self.status_var.set("正在启动")
         self.detail_var.set("准备加载 Qwen3.8 模型")
         self.start_button.configure(state="disabled")
+        self.apply_ctx_button.configure(state="disabled")
+        self.use_16k_button.configure(state="disabled")
         self.stop_button.configure(state="disabled")
         self.health_button.configure(state="disabled")
         self._append_log("INFO", "开始自动加载本地模型")
@@ -226,6 +270,8 @@ class LocalAiApp:
         self.status_var.set("正在停止")
         self.detail_var.set("正在释放模型占用的内存和显存")
         self.start_button.configure(state="disabled")
+        self.apply_ctx_button.configure(state="disabled")
+        self.use_16k_button.configure(state="disabled")
         self.stop_button.configure(state="disabled")
         self.health_button.configure(state="disabled")
         threading.Thread(target=self._stop_worker, daemon=True).start()
@@ -298,6 +344,8 @@ class LocalAiApp:
             self.url_var.set(str(result.get("lan_base_url") or "未检测到"))
             self.pid_var.set(str(result.get("pid") or "—"))
             self.start_button.configure(state="normal")
+            self.apply_ctx_button.configure(state="normal")
+            self.use_16k_button.configure(state="normal")
             self.stop_button.configure(state="normal")
             self.health_button.configure(state="normal")
             self._append_log("SUCCESS", f"模型加载完成；测试回答：{result['inference_check']['answer']}")
@@ -311,6 +359,8 @@ class LocalAiApp:
             self.model_var.set("尚未加载")
             self.pid_var.set("—")
             self.start_button.configure(state="normal")
+            self.apply_ctx_button.configure(state="normal")
+            self.use_16k_button.configure(state="normal")
             self.stop_button.configure(state="disabled")
             self.health_button.configure(state="disabled")
             self._append_log("SUCCESS", "本地 AI 服务已停止，模型资源已释放")
@@ -332,6 +382,8 @@ class LocalAiApp:
             self.status_var.set("启动失败")
             self.detail_var.set(str(payload))
             self.start_button.configure(state="normal")
+            self.apply_ctx_button.configure(state="normal")
+            self.use_16k_button.configure(state="normal")
             self.stop_button.configure(state="disabled")
             self.health_button.configure(state="disabled")
             self._append_log("ERROR", str(payload))

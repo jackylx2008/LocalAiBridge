@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import platform
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,34 @@ import yaml
 
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?}")
+_CTX_SIZE_LINE = re.compile(rb"(?m)^([ \t]*LLAMACPP_CTX_SIZE[ \t]*=)[^\r\n]*")
+
+
+def save_ctx_size(project_root: Path, ctx_size: int) -> None:
+    """将 GUI 选择的上下文长度写入本机配置，保留其他设置。"""
+    if ctx_size <= 0:
+        raise ValueError("上下文 token 数必须是正整数")
+    path = project_root / "common.env"
+    original = path.read_bytes() if path.exists() else b""
+    replacement = rb"\g<1>" + str(ctx_size).encode("ascii")
+    if _CTX_SIZE_LINE.search(original):
+        updated = _CTX_SIZE_LINE.sub(replacement, original)
+    else:
+        newline = b"\r\n" if b"\r\n" in original else b"\n"
+        separator = b"" if not original or original.endswith((b"\r", b"\n")) else newline
+        updated = original + separator + b"LLAMACPP_CTX_SIZE=" + str(ctx_size).encode("ascii") + newline
+    if updated == original:
+        return
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=project_root, prefix=".common.env.", delete=False) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(updated)
+        temporary_path.replace(path)
+    except Exception:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
 
 
 def load_dotenv(path: Path) -> None:
