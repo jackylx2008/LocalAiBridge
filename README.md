@@ -46,7 +46,7 @@ Windows ICO 和 macOS ICNS。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
-.\build_windows_exe.ps1
+.\scripts\windows\build_windows_exe.ps1
 ```
 
 生成的单文件程序位于 `build/delivery/LocalAiBridge.exe`，双击运行不会显示 CMD 窗口。程序优先读取
@@ -113,7 +113,7 @@ Mac Mini 必须和 Windows 主机位于同一局域网。客户端使用终端�
 Windows 主机需要在管理员 PowerShell 中执行一次：
 
 ```powershell
-.\configure_windows_firewall.ps1
+.\scripts\windows\configure_windows_firewall.ps1
 ```
 
 该脚本只允许专用网络中本地子网访问 TCP 8080。不要把该端口暴露到公网，也不要把

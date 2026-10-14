@@ -392,7 +392,7 @@ LLAMACPP_API_KEY=<长随机密钥>
 在管理员 PowerShell 中执行一次防火墙配置：
 
 ```powershell
-.\configure_windows_firewall.ps1
+.\scripts\windows\configure_windows_firewall.ps1
 ```
 
 规则仅允许专用网络的本地子网访问 TCP 8080。不要配置路由器端口转发，也不要将该服务暴露到公网。
