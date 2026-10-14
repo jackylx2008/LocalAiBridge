@@ -34,11 +34,11 @@ CUDA 12 运行库统一放在项目上级的共享目录 `../vendor/cuda12`，�
 
 图形界面在 Windows 运行时使用 `icons/windows/LocalAIBridge.ico` 作为窗口和任务栏图标。
 `icons/macos/LocalAIBridge.icns` 用作 macOS `.app` 应用包的图标；打包时应将该文件传给所用
-打包工具的应用图标选项。图标采用参考图中的机器人、无线信号、蓝色圆角底板和浅色背景；
-`icons/LocalAIBridge.png` 保留参考图的全部像素，不裁剪、不重绘、不移除背景。原始参考文件
-保存在 `icons/LocalAIBridge-reference.jpg`。运行 `python icons/generate_local_ai_bridge_icon.py`
-可从该 PNG 同步生成包含 16–256 像素帧的 Windows ICO 和 macOS ICNS；也可向脚本传入一张
-方形原图进行替换。
+打包工具的应用图标选项。图标沿用参考图的机器人、无线信号和蓝色圆角底板；生成脚本裁掉
+外部灰色背景与阴影，让底板占据约 94% 的画布宽度。蓝色底板不透明，圆角外透明。
+原始参考文件保存在 `icons/LocalAIBridge-reference.jpg`。运行
+`python icons/generate_local_ai_bridge_icon.py` 可重新生成 PNG、包含 16–256 像素帧的
+Windows ICO 和 macOS ICNS。
 
 ### 构建无控制台 Windows EXE
 
