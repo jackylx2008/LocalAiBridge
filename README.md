@@ -55,8 +55,7 @@ EXE 同目录的 `common.env` 和 `config.yaml`；从本项目的 `build/deliver
 密钥仍使用 `common.env` 指向的外部资源。
 
 该程序使用 Windows GUI 子系统构建；它启动的 `llama-server` 以及停止服务时调用的 `taskkill`
-也使用无窗口进程标志，因此正常运行和退出均不会弹出黑色控制台。`start_LocalAiBridge.cmd` 仅作为
-源码启动兼容入口，Windows 执行批处理文件时仍可能短暂闪现控制台，日常使用应直接运行 EXE。
+也使用无窗口进程标志，因此正常运行和退出均不会弹出黑色控制台。日常使用可直接运行 EXE。
 
 `build/`、`dist/`、PyInstaller 自动生成的 `*.spec`、`.tmp*/` 和 `.pytest_tmp*/` 都是可重新生成的
 本地产物，已在 `.gitignore` 中排除，不会提交到 Git。
