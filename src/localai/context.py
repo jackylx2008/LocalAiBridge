@@ -35,7 +35,9 @@ def resolve_runtime_paths(entry_file: str) -> tuple[Path, Path]:
         return source_root, source_root / "config.yaml"
 
     executable_root = Path(sys.executable).resolve().parent
-    candidates = (executable_root, executable_root.parent)
+    candidates = [executable_root, executable_root.parent]
+    if executable_root.name.lower() == "delivery" and executable_root.parent.name.lower() == "build":
+        candidates.append(executable_root.parent.parent)
     project_root = next(
         (
             candidate

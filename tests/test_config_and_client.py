@@ -59,6 +59,19 @@ def test_resolve_runtime_paths_finds_config_above_dist(monkeypatch, tmp_path: Pa
     assert config_path == tmp_path / "config.yaml"
 
 
+def test_resolve_runtime_paths_finds_config_above_build_delivery(monkeypatch, tmp_path: Path) -> None:
+    executable = tmp_path / "build" / "delivery" / "LocalAiBridge.exe"
+    executable.parent.mkdir(parents=True)
+    (tmp_path / "config.yaml").touch()
+    monkeypatch.setattr("localai.context.sys.frozen", True, raising=False)
+    monkeypatch.setattr("localai.context.sys.executable", str(executable))
+
+    project_root, config_path = resolve_runtime_paths("unused")
+
+    assert project_root == tmp_path
+    assert config_path == tmp_path / "config.yaml"
+
+
 def test_resolve_runtime_paths_uses_bundled_config_as_fallback(monkeypatch, tmp_path: Path) -> None:
     executable = tmp_path / "deploy" / "LocalAiBridge.exe"
     bundle_root = tmp_path / "bundle"

@@ -34,10 +34,11 @@ CUDA 12 运行库统一放在项目上级的共享目录 `../vendor/cuda12`，�
 
 图形界面在 Windows 运行时使用 `icons/windows/LocalAIBridge.ico` 作为窗口和任务栏图标。
 `icons/macos/LocalAIBridge.icns` 用作 macOS `.app` 应用包的图标；打包时应将该文件传给所用
-打包工具的应用图标选项。两个平台图标均由带真实 Alpha 透明通道的
-`icons/LocalAIBridge.png` 生成，不要使用带棋盘格背景的预览图替换源文件。
-修改图标后可运行 `python icons/generate_local_ai_bridge_icon.py`，同步生成高分辨率 PNG
-和包含 16–256 像素帧的 Windows ICO。
+打包工具的应用图标选项。图标采用参考图中的机器人、无线信号、蓝色圆角底板和浅色背景；
+`icons/LocalAIBridge.png` 保留参考图的全部像素，不裁剪、不重绘、不移除背景。原始参考文件
+保存在 `icons/LocalAIBridge-reference.jpg`。运行 `python icons/generate_local_ai_bridge_icon.py`
+可从该 PNG 同步生成包含 16–256 像素帧的 Windows ICO 和 macOS ICNS；也可向脚本传入一张
+方形原图进行替换。
 
 ### 构建无控制台 Windows EXE
 
@@ -48,10 +49,10 @@ CUDA 12 运行库统一放在项目上级的共享目录 `../vendor/cuda12`，�
 .\build_windows_exe.ps1
 ```
 
-生成的单文件程序位于 `dist/LocalAiBridge.exe`，双击运行不会显示 CMD 窗口。程序优先读取 EXE
-同目录的 `common.env` 和 `config.yaml`；从本项目的 `dist` 目录直接运行时，也会自动读取项目根目录
-中的配置。默认 `config.yaml` 和窗口图标同时内置在 EXE 中，但模型、llama.cpp 和本机密钥仍使用
-`common.env` 指向的外部资源。
+生成的单文件程序位于 `build/delivery/LocalAiBridge.exe`，双击运行不会显示 CMD 窗口。程序优先读取
+EXE 同目录的 `common.env` 和 `config.yaml`；从本项目的 `build/delivery` 目录直接运行时，也会自动
+读取项目根目录中的配置。默认 `config.yaml` 和窗口图标同时内置在 EXE 中，但模型、llama.cpp 和本机
+密钥仍使用 `common.env` 指向的外部资源。
 
 该程序使用 Windows GUI 子系统构建；它启动的 `llama-server` 以及停止服务时调用的 `taskkill`
 也使用无窗口进程标志，因此正常运行和退出均不会弹出黑色控制台。`start_LocalAiBridge.cmd` 仅作为
@@ -59,6 +60,8 @@ CUDA 12 运行库统一放在项目上级的共享目录 `../vendor/cuda12`，�
 
 `build/`、`dist/`、PyInstaller 自动生成的 `*.spec`、`.tmp*/` 和 `.pytest_tmp*/` 都是可重新生成的
 本地产物，已在 `.gitignore` 中排除，不会提交到 Git。
+
+本次图标转换和打包调整的记录见 [2026-10-14 更新说明](docs/UPDATE_2026-10-14.md)。
 
 窗口启动后会自动在后台加载模型，显眼的进度条显示当前阶段；“服务运行信息”区域显示模型、局域网
 IP、端口、Mac 访问地址和 PID。点击“健康检查”可重新检查 `/health` 与模型列表；点击“停止模型”

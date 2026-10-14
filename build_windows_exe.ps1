@@ -15,6 +15,7 @@ try {
         --onefile `
         --windowed `
         --name LocalAiBridge `
+        --distpath "build\delivery" `
         --icon "icons\windows\LocalAIBridge.ico" `
         --paths "src" `
         --add-data "config.yaml;." `
@@ -25,7 +26,7 @@ try {
         throw "PyInstaller failed with exit code $LASTEXITCODE"
     }
 
-    Write-Host "Built: $projectRoot\dist\LocalAiBridge.exe"
+    Write-Host "Built: $projectRoot\build\delivery\LocalAiBridge.exe"
 }
 finally {
     Pop-Location
