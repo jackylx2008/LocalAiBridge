@@ -10,6 +10,7 @@ logs/
 run/
 vendor/cuda12/
 output/
+outputs/
 build/
 dist/
 *.spec

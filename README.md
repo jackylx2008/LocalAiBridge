@@ -1,6 +1,27 @@
 # LocalAiBridge
 
-在 Windows 主机上以 `llama.cpp` 运行 Qwen3.8，并通过 OpenAI 兼容 API 提供给同一局域网内的开发设备。
+在 Windows 主机上运行 Qwen3.8 和 ComfyUI 文生图，通过固定的局域网 API 提供给开发设备。LocalAiBridge 独占对外 8090 端口，内部 `llama-server` 使用本机 8081，ComfyUI 使用本机 8188。
+
+## 文生图与模式切换
+
+使用默认 SDXL 时，须将基础模型放到 ComfyUI 的 `models/checkpoints/sd_xl_base_1.0.safetensors`，并在 `common.env` 中设置 `COMFYUI_ROOT`、`COMFYUI_PYTHON` 和 `COMFYUI_CHECKPOINT`。选择 Qwen-Image-2512 时则需要下文列出的三个模型文件。生图默认 1024×1024，限制为一次一张、512–1024 像素；SDXL 最多 40 步，Qwen-Image-2512 最多 50 步。程序每次生图完成或失败后自动恢复文字模式。GUI 中有手动切换按钮；外部程序也可使用下列接口。所有接口使用现有 `LLAMACPP_API_KEY` Bearer Key。
+
+```text
+GET  /admin/status                         当前模式及任务状态
+POST /admin/mode                           {"mode":"text"} 或 {"mode":"image"}
+POST /v1/images/generations                {"model":"sdxl","prompt":"a red fox","width":768,"height":768,"steps":20}
+POST /v1/images/generations                {"model":"qwen-image-2512","prompt":"秋日书店","width":1024,"height":1024,"steps":30}
+GET  /v1/images/jobs/{id}                  查询生图任务
+GET  /v1/images/jobs/{id}/content          下载生成的 PNG
+```
+
+生图提交返回 HTTP 202 和任务 ID。任务状态有 `queued`、`running`、`restoring`、`completed`、`failed`。生成图像保存在项目 `outputs/`，返回的 `image_url` 可以通过同一 Bearer Key 获取。生图切换期间，新文字请求会等待当前任务释放全局锁；如果文字模式不可用，返回 HTTP 503。现有 `/v1/chat/completions` 和 `/v1/models` 仍由固定 8090 地址转发。
+
+Windows 上可运行 `python scripts/windows/download_sdxl.py` 分块下载并校验官方 SDXL 模型 SHA256；脚本使用镜像传输，只有校验通过才视为安装完成。模型文件约 6.94 GB。项目只管理本程序启动的后端进程。
+
+Qwen-Image-2512 可通过 `"model":"qwen-image-2512"` 选择。它需要 ComfyUI 的 `models/diffusion_models/qwen_image_2512_fp8_e4m3fn.safetensors`、`models/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors` 和 `models/vae/qwen_image_vae.safetensors`。`python scripts/windows/download_qwen_image_2512.py` 可分块下载并校验三个文件。人工下载时，分别从 [Comfy-Org 扩散模型](https://huggingface.co/Comfy-Org/Qwen-Image/blob/main/split_files/diffusion_models/qwen_image_2512_fp8_e4m3fn.safetensors)、[文本编码器](https://huggingface.co/Comfy-Org/Qwen-Image/blob/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors) 和 [VAE](https://huggingface.co/Comfy-Org/Qwen-Image/blob/main/split_files/vae/qwen_image_vae.safetensors) 下载，放入上述目录。Qwen 默认 50 步；两个 FP8 主文件合计约 30 GB，24 GB 显卡需依靠 ComfyUI 内存调度。
+
+本机 RTX 5090 D v2（总显存 24455 MiB）实测 Qwen：512×512/12 步耗时 81 秒，768×768/20 步耗时 73 秒，1024×1024/30 步耗时 86 秒，均包含模型切换和文字服务恢复；整卡显存采样峰值分别为 23478、23510、23350 MiB。三次均成功出图并恢复文字请求。显存余量约 1 GiB，因此当前只开放单张、最大 1024×1024；默认 50 步尚未单独计时。详情见 [2026-10-29 更新记录](docs/UPDATE_2026-10-29.md)。
 
 ## 本机准备
 
@@ -11,7 +32,7 @@ Copy-Item common.env.example common.env
 ```
 
 在 `common.env` 中配置 `llama-server.exe`、GGUF、mmproj 路径及随机 API Key。局域网访问时将
-`LLAMACPP_HOST` 设为 `0.0.0.0`，但本机健康检查地址仍使用 `http://127.0.0.1:8080/v1`。
+`BRIDGE_HOST` 设为 `0.0.0.0`；`LLAMACPP_HOST` 保持 `127.0.0.1`，本机后端地址是 `http://127.0.0.1:8081/v1`。
 
 CUDA 12 运行库统一放在项目上级的共享目录 `../vendor/cuda12`，即本机当前目录结构中的
 `D:\CloudStation\Python\Project\vendor\cuda12`。`LLAMACPP_EXTRA_DLL_DIRS` 默认指向该共享目录，
@@ -82,11 +103,10 @@ IP、端口、Mac 访问地址和 PID。点击“健康检查”可重新检查 
 大段 Python traceback。目前可直接识别端口占用、内存或显存不足、模型加载失败；其他错误会显示
 最后一条关键底层信息，并提示查看 `logs/llama_server.err.log`。
 
-如果提示“端口 8080 已被其他程序占用”，通常表示其他项目已经启动了本地 AI 服务。先关闭已有服务，
-或让两个项目使用不同端口，再点击“重新加载模型”。可用以下命令查看占用进程：
+如果提示端口占用，检查对外 8090、文字后端 8081 或 ComfyUI 8188 是否已有服务。可用以下命令查看占用进程：
 
 ```powershell
-Get-NetTCPConnection -LocalPort 8080 -State Listen |
+Get-NetTCPConnection -LocalPort 8090 -State Listen |
   Select-Object LocalAddress, LocalPort, OwningProcess
 Get-Process -Id <OwningProcess>
 ```
@@ -103,7 +123,7 @@ Windows 上运行 `main.py` 后，GUI 的“服务运行信息”会显示当前
 
 ```text
 本机局域网 IP ：192.168.x.x
-Mac 访问地址  ：http://192.168.x.x:8080/v1
+Mac 访问地址  ：http://192.168.x.x:8090/v1
 ```
 
 Mac Mini 必须和 Windows 主机位于同一局域网。客户端使用终端显示的“Mac 访问地址”作为 Base URL，
@@ -116,7 +136,7 @@ Windows 主机需要在管理员 PowerShell 中执行一次：
 .\scripts\windows\configure_windows_firewall.ps1
 ```
 
-该脚本只允许专用网络中本地子网访问 TCP 8080。不要把该端口暴露到公网，也不要把
+该脚本只允许专用网络中本地子网访问 TCP 8090。不要把该端口暴露到公网，也不要把
 `common.env` 或 API Key 提交到版本库。
 
 ### 1. 在 Mac Mini 配置连接信息
@@ -127,10 +147,10 @@ export LOCAL_AI_API_KEY="<common.env 中的 LLAMACPP_API_KEY>"
 export LOCAL_AI_MODEL="Qwen3.8-27B-Q4_K_M"
 ```
 
-例如 GUI 显示 `http://192.168.1.100:8080/v1` 时：
+例如 GUI 显示 `http://192.168.1.100:8090/v1` 时：
 
 ```bash
-export LOCAL_AI_BASE_URL="http://192.168.1.100:8080/v1"
+export LOCAL_AI_BASE_URL="http://192.168.1.100:8090/v1"
 ```
 
 ### 2. 验证模型列表

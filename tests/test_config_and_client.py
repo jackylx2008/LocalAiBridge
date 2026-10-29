@@ -21,7 +21,8 @@ def test_example_config_loads(monkeypatch, tmp_path: Path) -> None:
     llama = LlamaCppConfig.from_config(config["llamacpp"], Path(__file__).parents[1])
     assert llama.model == "Qwen3.8-27B-Q4_K_M"
     assert "--api-key" in llama.command()
-    assert llama.host == "0.0.0.0"
+    assert llama.host == "127.0.0.1"
+    assert llama.port == 8081
     assert llama.extra_dll_dirs == (Path(__file__).parents[2] / "vendor" / "cuda12",)
     assert llama.command()[llama.command().index("-c") + 1] == "32768"
 

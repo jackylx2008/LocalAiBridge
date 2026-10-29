@@ -2,9 +2,9 @@ app:
   log_level: ${LOG_LEVEL:-INFO}
 
 llamacpp:
-  base_url: ${LLAMACPP_BASE_URL:-http://127.0.0.1:8080/v1}
+  base_url: ${LLAMACPP_BASE_URL:-http://127.0.0.1:8081/v1}
   host: ${LLAMACPP_HOST:-127.0.0.1}
-  port: ${LLAMACPP_PORT:-8080}
+  port: ${LLAMACPP_PORT:-8081}
   model: ${LLAMACPP_MODEL:-local-model}
   api_key: ${LLAMACPP_API_KEY:-}
   autostart: ${LLAMACPP_AUTOSTART:-true}
@@ -18,3 +18,17 @@ llamacpp:
   reasoning: '${LLAMACPP_REASONING:-off}'
   reasoning_budget: ${LLAMACPP_REASONING_BUDGET:-0}
   startup_timeout: ${LLAMACPP_STARTUP_TIMEOUT:-600}
+
+gateway:
+  host: ${BRIDGE_HOST:-0.0.0.0}
+  port: ${BRIDGE_PORT:-8090}
+
+comfyui:
+  root: '${COMFYUI_ROOT:-C:/ComfyUI}'
+  python_path: '${COMFYUI_PYTHON:-C:/ComfyUI/.venv/Scripts/python.exe}'
+  checkpoint: ${COMFYUI_CHECKPOINT:-sd_xl_base_1.0.safetensors}
+  port: ${COMFYUI_PORT:-8188}
+  qwen:
+    diffusion: ${QWEN_IMAGE_DIFFUSION:-qwen_image_2512_fp8_e4m3fn.safetensors}
+    text_encoder: ${QWEN_IMAGE_TEXT_ENCODER:-qwen_2.5_vl_7b_fp8_scaled.safetensors}
+    vae: ${QWEN_IMAGE_VAE:-qwen_image_vae.safetensors}

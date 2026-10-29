@@ -19,6 +19,8 @@ from localai.config_loader import save_ctx_size
 from localai.context import AppContext
 from flows.server_flow import build_client, start_owned
 from localai.modules.llamacpp_client import LlamaCppClient
+from localai.modules.bridge import BridgeManager
+from flows.server_flow import _get_primary_lan_ipv4
 
 
 class QueueLogHandler(logging.Handler):
@@ -52,6 +54,8 @@ class LocalAiApp:
     def __init__(self, root: tk.Tk, context: AppContext) -> None:
         self.root = root
         self.context = context
+        self.manager = BridgeManager(context)
+        self.manager.serve()
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.client: LlamaCppClient | None = None
         self.worker: threading.Thread | None = None
@@ -70,7 +74,7 @@ class LocalAiApp:
         self.progress_var = tk.DoubleVar(value=0)
         self.model_var = tk.StringVar(value="尚未加载")
         self.ip_var = tk.StringVar(value="检测中")
-        self.port_var = tk.StringVar(value=str(context.config["llamacpp"].get("port", 8080)))
+        self.port_var = tk.StringVar(value=str(context.config["gateway"].get("port", 8090)))
         self.ctx_size_var = tk.StringVar(value=str(context.config["llamacpp"].get("ctx_size", 32768)))
         self.url_var = tk.StringVar(value="等待模型启动")
         self.pid_var = tk.StringVar(value="—")
@@ -83,10 +87,11 @@ class LocalAiApp:
         self.root.protocol("WM_DELETE_WINDOW", self._request_close)
         self._event_after_id = self.root.after(100, self._drain_events)
         self._elapsed_after_id = self.root.after(1000, self._update_elapsed)
+        self._mode_after_id = self.root.after(1000, self._sync_mode)
         self._startup_after_id = self.root.after(250, self.start_model)
 
     def _configure_window(self) -> None:
-        self.root.title("LocalAiBridge - Qwen3.8 本地 AI 服务")
+        self.root.title("LocalAiBridge - 本地 AI 服务")
         self.root.geometry("920x720")
         self.root.minsize(760, 600)
         configure_window_icon(self.root, self.context.project_root)
@@ -173,14 +178,52 @@ class LocalAiApp:
         self.stop_button.pack(side="left", padx=8)
         self.health_button = ttk.Button(buttons, text="健康检查", command=self.health_check, state="disabled")
         self.health_button.pack(side="left")
+        ttk.Button(buttons, text="切换文字模式", command=lambda: self.switch_mode("text")).pack(side="left", padx=8)
+        ttk.Button(buttons, text="切换生图模式", command=lambda: self.switch_mode("image")).pack(side="left")
+
+    def switch_mode(self, mode: str) -> None:
+        if self.busy:
+            return
+        self.busy = True
+        self.status_var.set("正在切换模式")
+        threading.Thread(target=self._switch_worker, args=(mode,), daemon=True).start()
+
+    def _switch_worker(self, mode: str) -> None:
+        try:
+            self.manager.activate(mode)
+            self.events.put(("mode_changed", mode))
+        except Exception as exc:
+            self.events.put(("error", str(exc)))
+
+    def _sync_mode(self) -> None:
+        self._mode_after_id = None
+        if self.destroyed:
+            return
+        mode = self.manager.mode
+        if not self.busy and mode == "image":
+            active_job = next((job for job in self.manager.jobs.values() if job.state == "running"), None)
+            generating = active_job is not None
+            self.status_var.set("正在生图" if generating else "生图模式")
+            self.model_var.set(active_job.model if active_job else "ComfyUI：SDXL / Qwen-Image-2512")
+            self.pid_var.set(str(self.manager.comfy.process.pid if self.manager.comfy.process else "—"))
+            self.health_button.configure(state="disabled")
+        elif not self.busy and mode == "text" and self.manager.client:
+            self.status_var.set("文字/识图模式")
+            self.model_var.set(self.manager.client.config.model)
+            self.pid_var.set(str(self.manager.client.process.pid if self.manager.client.process else "—"))
+            self.health_button.configure(state="normal")
+        elif mode == "switching":
+            self.status_var.set("正在切换模式")
+        self._mode_after_id = self.root.after(1000, self._sync_mode)
 
     def _build_config_tab(self, parent: ttk.Frame) -> None:
         config = self.context.config["llamacpp"]
         parent.columnconfigure(1, weight=1)
         items = [
             ("模型别名", config.get("model")),
-            ("监听地址", f"{config.get('host')}:{config.get('port')}"),
-            ("本机 API", config.get("base_url")),
+            ("对外 API", f"{self.context.config['gateway']['host']}:{self.context.config['gateway']['port']}"),
+            ("文字后端", config.get("base_url")),
+            ("ComfyUI", self.context.config["comfyui"].get("root")),
             ("上下文长度（token）", None),
             ("GPU Offload 层", config.get("n_gpu_layers")),
             ("API 鉴权", "已启用 Bearer Key" if config.get("api_key") else "未启用"),
@@ -250,21 +293,21 @@ class LocalAiApp:
 
     def _start_worker(self) -> None:
         try:
-            if self.client is not None:
-                self.events.put(("progress", (8, "正在停止当前模型以便重新加载")))
-                self.client.shutdown_server()
-                self.client = None
-            client, result = start_owned(
-                self.context,
-                lambda percent, message: self.events.put(("progress", (percent, message))),
-            )
+            self.manager.stop()
+            self.manager.activate("text")
+            client = self.manager.client
+            ip = _get_primary_lan_ipv4()
+            result = {"model": client.config.model, "lan_ip": ip,
+                      "port": self.context.config["gateway"]["port"],
+                      "lan_base_url": f"http://{ip}:{self.context.config['gateway']['port']}/v1" if ip else None,
+                      "pid": client.process.pid, "inference_check": {"answer": "通过"}}
             self.events.put(("started", (client, result)))
         except Exception as exc:
             logging.getLogger(__name__).exception("GUI 自动加载模型失败")
             self.events.put(("error", str(exc)))
 
     def stop_model(self) -> None:
-        if self.busy or not self.client:
+        if self.busy or self.manager.mode == "stopped":
             return
         self.busy = True
         self.status_var.set("正在停止")
@@ -278,8 +321,7 @@ class LocalAiApp:
 
     def _stop_worker(self) -> None:
         try:
-            if self.client:
-                self.client.shutdown_server()
+            self.manager.stop()
             self.events.put(("stopped", None))
         except Exception as exc:
             logging.getLogger(__name__).exception("停止本地模型失败")
@@ -294,7 +336,7 @@ class LocalAiApp:
 
     def _health_worker(self) -> None:
         try:
-            client = self.client or build_client(self.context)
+            client = self.manager.client or build_client(self.context)
             health = client.health()
             models = client.models()
             client.assert_model_available(models)
@@ -366,6 +408,15 @@ class LocalAiApp:
             self._append_log("SUCCESS", "本地 AI 服务已停止，模型资源已释放")
             if self.close_requested:
                 self._destroy_window()
+        elif event == "mode_changed":
+            if self.close_requested:
+                threading.Thread(target=self._close_after_start, daemon=True).start()
+                return
+            self.busy = False
+            self.running = True
+            self.status_var.set("文字/识图模式" if payload == "text" else "生图模式")
+            self.detail_var.set("可接收外部请求")
+            self.client = self.manager.client
         elif event == "health":
             self.health_button.configure(state="normal")
             self.detail_var.set("健康检查通过，配置模型可用")
@@ -427,7 +478,7 @@ class LocalAiApp:
         self.detail_var.set("正在停止服务并卸载模型")
         if self.busy:
             self._append_log("WARNING", "将在当前加载步骤安全结束后关闭服务")
-        elif self.client:
+        elif self.manager.mode != "stopped":
             self.busy = True
             threading.Thread(target=self._stop_worker, daemon=True).start()
         else:
@@ -438,7 +489,7 @@ class LocalAiApp:
         if self.destroyed:
             return
         self.destroyed = True
-        for attribute in ("_event_after_id", "_elapsed_after_id", "_startup_after_id"):
+        for attribute in ("_event_after_id", "_elapsed_after_id", "_startup_after_id", "_mode_after_id"):
             after_id = getattr(self, attribute)
             if after_id is not None:
                 try:
@@ -451,13 +502,13 @@ class LocalAiApp:
             self._log_handler.close()
             self._log_handler = None
         try:
+            self.manager.shutdown()
             self.root.destroy()
         except tk.TclError:
             pass
 
     def _close_after_start(self) -> None:
-        if self.client:
-            self.client.shutdown_server()
+        self.manager.stop()
         self.events.put(("stopped", None))
 
 

@@ -1,7 +1,7 @@
 #Requires -RunAsAdministrator
 
 $ErrorActionPreference = "Stop"
-$ruleName = "LocalAiBridge llama.cpp 8080"
+$ruleName = "LocalAiBridge API 8090"
 
 $existing = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
 if ($null -ne $existing) {
@@ -14,8 +14,8 @@ New-NetFirewallRule `
     -Direction Inbound `
     -Action Allow `
     -Protocol TCP `
-    -LocalPort 8080 `
+    -LocalPort 8090 `
     -Profile Private `
     -RemoteAddress LocalSubnet | Out-Null
 
-Write-Host "已添加防火墙规则：仅允许专用网络本地子网访问 TCP 8080"
+Write-Host "已添加防火墙规则：仅允许专用网络本地子网访问 TCP 8090"

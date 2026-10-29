@@ -1,5 +1,7 @@
 # Local AI Runtime Setup
 
+> 2026-10-29 更新：本页以下步骤保留了原先由 `llama-server` 直接监听 8080 的配置记录。当前版本由 LocalAiBridge 网关监听 8090，`llama-server` 仅监听本机 8081，ComfyUI 仅监听本机 8188。实际配置与生图接口请以 [README](../README.md) 和 `common.env.example` 为准。
+
 本文档记录当前项目的本地 AI 运行环境：CUDA 基础检查、Python 虚拟环境、`llama.cpp` 服务启动，以及通过 GUI 验证本地模型调用。
 
 ## 当前项目约定
