@@ -7,7 +7,7 @@
 使用默认 SDXL 时，须将基础模型放到 ComfyUI 的 `models/checkpoints/sd_xl_base_1.0.safetensors`，并在 `common.env` 中设置 `COMFYUI_ROOT`、`COMFYUI_PYTHON` 和 `COMFYUI_CHECKPOINT`。选择 Qwen-Image-2512 时则需要下文列出的三个模型文件。生图默认 1024×1024，限制为一次一张、512–1024 像素；SDXL 最多 40 步，Qwen-Image-2512 最多 50 步。程序每次生图完成或失败后自动恢复文字模式。GUI 中有手动切换按钮；外部程序也可使用下列接口。所有接口使用现有 `LLAMACPP_API_KEY` Bearer Key。
 
 ```text
-GET  /admin/status                         当前模式及任务状态
+GET  /admin/status                         当前模式、切换阶段及任务状态
 POST /admin/mode                           {"mode":"text"} 或 {"mode":"image"}
 POST /v1/images/generations                {"model":"sdxl","prompt":"a red fox","width":768,"height":768,"steps":20}
 POST /v1/images/generations                {"model":"qwen-image-2512","prompt":"秋日书店","width":1024,"height":1024,"steps":30}
@@ -16,6 +16,10 @@ GET  /v1/images/jobs/{id}/content          下载生成的 PNG
 ```
 
 生图提交返回 HTTP 202 和任务 ID。任务状态有 `queued`、`running`、`restoring`、`completed`、`failed`。生成图像保存在项目 `outputs/`，返回的 `image_url` 可以通过同一 Bearer Key 获取。生图切换期间，新文字请求会等待当前任务释放全局锁；如果文字模式不可用，返回 HTTP 503。现有 `/v1/chat/completions` 和 `/v1/models` 仍由固定 8090 地址转发。
+
+手动或自动切换文字/生图模式时，GUI 实时日志和磁盘日志会记录切换起点、旧服务停止、新服务启动/校验、成功或失败。`GET /admin/status` 返回的 `mode` 在切换期间为 `switching`，`transition` 提供 `target`、`phase` 和 `error`，例如 `{"mode":"switching","transition":{"target":"image","phase":"starting_image","error":null}}`；切换完成后 `phase` 为 `complete`，失败时为 `failed` 并附错误原因，调用方可轮询此接口确认当前状态。
+
+GUI 手动切换时，日志区会逐条显示切换目标、停止当前服务、启动目标服务及最终成功或失败。重新打包 Windows 单文件 EXE：`.\scripts\windows\build_windows_exe.ps1`；生成文件位于 `build/delivery/LocalAiBridge.exe`。
 
 Windows 上可运行 `python scripts/windows/download_sdxl.py` 分块下载并校验官方 SDXL 模型 SHA256；脚本使用镜像传输，只有校验通过才视为安装完成。模型文件约 6.94 GB。项目只管理本程序启动的后端进程。
 

@@ -35,6 +35,7 @@ class BridgeManager:
         self.context = context
         self.lock = threading.RLock()
         self.mode = "stopped"
+        self.transition: dict[str, str | None] = {"target": None, "phase": "idle", "error": None}
         self.client: LlamaCppClient | None = None
         self.comfy = ComfyBackend(context.config["comfyui"], context.project_root / "outputs")
         self.jobs: dict[str, ImageJob] = {}
@@ -42,7 +43,8 @@ class BridgeManager:
         self.server_thread: threading.Thread | None = None
 
     def status(self) -> dict:
-        return {"mode": self.mode, "jobs": {key: value.state for key, value in self.jobs.items()}}
+        return {"mode": self.mode, "transition": dict(self.transition),
+                "jobs": {key: value.state for key, value in self.jobs.items()}}
 
     def activate(self, mode: str) -> dict:
         if mode not in {"text", "image"}:
@@ -52,19 +54,37 @@ class BridgeManager:
                 return self.status()
             if mode == "image" and self.mode == mode and self.comfy.process and self.comfy.process.poll() is None:
                 return self.status()
+            previous_mode = self.mode
             self.mode = "switching"
+            self.transition = {"target": mode, "phase": "starting", "error": None}
+            logger = logging.getLogger(__name__)
+            logger.info("开始切换模型模式：%s -> %s", previous_mode, mode)
             try:
                 if self.client:
+                    self.transition["phase"] = "stopping_text"
+                    logger.info("正在停止文字模型服务")
                     self.client.shutdown_server()
                     self.client = None
+                    logger.info("文字模型服务已停止")
+                if self.comfy.process and self.comfy.process.poll() is None:
+                    self.transition["phase"] = "stopping_image"
+                    logger.info("正在停止 ComfyUI 生图服务")
                 self.comfy.stop()
                 if mode == "text":
+                    self.transition["phase"] = "starting_text"
+                    logger.info("正在启动并校验文字模型服务")
                     self.client, _ = start_owned(self.context)
                 else:
+                    self.transition["phase"] = "starting_image"
+                    logger.info("正在启动 ComfyUI 生图服务")
                     self.comfy.start()
                 self.mode = mode
-            except Exception:
+                self.transition = {"target": mode, "phase": "complete", "error": None}
+                logger.info("模型模式切换成功：当前模式=%s", mode)
+            except Exception as exc:
                 self.mode = "stopped"
+                self.transition = {"target": mode, "phase": "failed", "error": str(exc)}
+                logger.exception("模型模式切换失败：目标模式=%s", mode)
                 raise
             return self.status()
 

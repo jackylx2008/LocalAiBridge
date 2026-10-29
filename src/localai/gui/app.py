@@ -189,10 +189,42 @@ class LocalAiApp:
         threading.Thread(target=self._switch_worker, args=(mode,), daemon=True).start()
 
     def _switch_worker(self, mode: str) -> None:
+        result: dict[str, Any] = {}
+        failure: list[Exception] = []
+
+        def activate() -> None:
+            try:
+                result.update(self.manager.activate(mode))
+            except Exception as exc:
+                failure.append(exc)
+
+        phase_messages = {
+            "stopping_text": "正在停止文字模型服务并释放显存",
+            "stopping_image": "正在停止 ComfyUI 生图服务并释放显存",
+            "starting_text": "正在启动文字模型服务并执行健康校验",
+            "starting_image": "正在启动 ComfyUI 生图服务",
+        }
+        self.events.put(("mode_log", ("INFO", f"开始切换到{'文字' if mode == 'text' else '生图'}模式")))
+        worker = threading.Thread(target=activate, daemon=True)
+        worker.start()
+        last_phase: str | None = None
+        while worker.is_alive():
+            transition = dict(self.manager.transition)
+            phase = transition.get("phase")
+            if phase != last_phase:
+                message = phase_messages.get(str(phase))
+                if message:
+                    self.events.put(("mode_log", ("INFO", message)))
+                last_phase = phase
+            worker.join(timeout=0.1)
+        worker.join()
         try:
-            self.manager.activate(mode)
+            if failure:
+                raise failure[0]
+            self.events.put(("mode_log", ("SUCCESS", f"模式切换成功：{'文字' if mode == 'text' else '生图'}模式已就绪")))
             self.events.put(("mode_changed", mode))
         except Exception as exc:
+            self.events.put(("mode_log", ("ERROR", f"模式切换失败：{exc}")))
             self.events.put(("error", str(exc)))
 
     def _sync_mode(self) -> None:
@@ -364,6 +396,9 @@ class LocalAiApp:
         if self.destroyed:
             return
         if event == "log":
+            level, message = payload
+            self._append_log(level, message)
+        elif event == "mode_log":
             level, message = payload
             self._append_log(level, message)
         elif event == "progress":
